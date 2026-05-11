@@ -18,7 +18,7 @@ from telegram.ext import (
     CallbackQueryHandler
 )
 
-TELEGRAM_TOKEN = os.getenv("8733489007:AAH_So9kjUljYsbgXDjcwty81IcoebKelwg")
+TELEGRAM_TOKEN = os.getenv("8733489007:AAFYFiMbER9Cp00XTid5TjB3az6AftPpMNo")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
