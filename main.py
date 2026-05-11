@@ -2,7 +2,7 @@ import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-TOKEN = "8733489007:AAH_So9kjUljYsbgXDjcwty81IcoebKelwg"
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Бот работает!")
@@ -12,7 +12,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
 
-    print("Бот запущен...")
     app.run_polling()
 
 if __name__ == "__main__":
