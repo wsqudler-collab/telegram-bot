@@ -1,2 +1,6 @@
 python-telegram-bot==22.7
 matplotlib
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
