@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 
@@ -23,6 +23,12 @@ from telegram.ext import (
 )
 
 # ==========================================
+# GOOGLE CALENDAR
+# ==========================================
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
+# ==========================================
 # CONFIG
 # ==========================================
 
@@ -31,10 +37,55 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN не найден")
 
-# ВСТАВЬ СВОЙ TELEGRAM ID
 ADMIN_ID = 6604090880
 
 logging.basicConfig(level=logging.INFO)
+
+# ==========================================
+# SAFE START (FIX 409 CONFLICT)
+# ==========================================
+
+async def safe_startup(app):
+    await app.bot.delete_webhook(drop_pending_updates=True)
+
+# ==========================================
+# GOOGLE CALENDAR INIT
+# ==========================================
+
+GOOGLE_CREDS = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
+
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+credentials = service_account.Credentials.from_service_account_info(
+    GOOGLE_CREDS,
+    scopes=SCOPES
+)
+
+calendar_service = build("calendar", "v3", credentials=credentials)
+
+CALENDAR_ID = "primary"
+
+
+def create_calendar_event(name, date, time, topic):
+    dt_start = datetime.strptime(f"{date} {time}", "%d.%m.%Y %H:%M")
+    dt_end = dt_start + timedelta(hours=1)
+
+    event = {
+        "summary": f"Урок: {name} - {topic}",
+        "start": {
+            "dateTime": dt_start.isoformat(),
+            "timeZone": "Europe/Amsterdam",
+        },
+        "end": {
+            "dateTime": dt_end.isoformat(),
+            "timeZone": "Europe/Amsterdam",
+        },
+    }
+
+    calendar_service.events().insert(
+        calendarId=CALENDAR_ID,
+        body=event
+    ).execute()
 
 # ==========================================
 # DATA
@@ -65,7 +116,6 @@ def save_users():
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(approved_users, f, ensure_ascii=False, indent=4)
 
-
 # ==========================================
 # MENU
 # ==========================================
@@ -78,14 +128,9 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# ==========================================
-# ACCESS SYSTEM
-# ==========================================
-
 
 def has_access(user_id):
     return user_id in approved_users
-
 
 # ==========================================
 # START
@@ -94,7 +139,6 @@ def has_access(user_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    # ADMIN
     if user.id == ADMIN_ID:
         await update.message.reply_text(
             "👨‍🏫 Панель преподавателя",
@@ -102,7 +146,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # APPROVED
     if has_access(user.id):
         await update.message.reply_text(
             "✅ Доступ разрешён",
@@ -110,37 +153,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # SEND REQUEST TO ADMIN
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(
-                "✅ Принять",
-                callback_data=f"accept_{user.id}"
-            ),
-            InlineKeyboardButton(
-                "❌ Отклонить",
-                callback_data=f"reject_{user.id}"
-            ),
+            InlineKeyboardButton("✅ Принять", callback_data=f"accept_{user.id}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{user.id}")
         ]
     ])
 
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=(
-                f"📩 Новая заявка\n\n"
-                f"👤 {user.full_name}\n"
-                f"🆔 {user.id}"
-            ),
+            text=f"📩 Новая заявка\n\n👤 {user.full_name}\n🆔 {user.id}",
             reply_markup=keyboard
         )
     except:
         pass
 
-    await update.message.reply_text(
-        "⏳ Заявка отправлена администратору"
-    )
-
+    await update.message.reply_text("⏳ Заявка отправлена")
 
 # ==========================================
 # STUDENT CARD
@@ -161,45 +190,21 @@ async def send_student_card(update, name):
     lessons = student.get("уроки_список", [])
 
     if lessons:
-        next_lesson = lessons[-1]
+        last = lessons[-1]
         text += (
-            f"\n📅 Следующий урок:\n"
-            f"{next_lesson['дата']} {next_lesson['время']}\n"
-            f"📘 {next_lesson['тема']}"
+            f"\n📅 Последний урок:\n"
+            f"{last['дата']} {last['время']}\n"
+            f"📘 {last['тема']}"
         )
 
     keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "💰 Добавить оплату",
-                callback_data=f"payment_{name}"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📅 Назначить урок",
-                callback_data=f"lesson_{name}"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📈 График",
-                callback_data=f"chart_{name}"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🗑 Удалить",
-                callback_data=f"delete_{name}"
-            )
-        ]
+        [InlineKeyboardButton("💰 Добавить оплату", callback_data=f"payment_{name}")],
+        [InlineKeyboardButton("📅 Назначить урок", callback_data=f"lesson_{name}")],
+        [InlineKeyboardButton("📈 График", callback_data=f"chart_{name}")],
+        [InlineKeyboardButton("🗑 Удалить", callback_data=f"delete_{name}")]
     ])
 
-    await update.message.reply_text(
-        text,
-        reply_markup=keyboard
-    )
-
+    await update.message.reply_text(text, reply_markup=keyboard)
 
 # ==========================================
 # GRAPH
@@ -214,16 +219,13 @@ async def send_chart(update, name):
     lessons = student.get("уроки", 0)
 
     if lessons == 0:
-        await update.callback_query.message.reply_text(
-            "Нет уроков для графика"
-        )
+        await update.callback_query.message.reply_text("Нет уроков для графика")
         return
 
     x = list(range(1, lessons + 1))
     y = []
 
     total = 0
-
     for i in range(lessons):
         total += 1
         y.append(total)
@@ -242,7 +244,6 @@ async def send_chart(update, name):
 
     plt.close()
 
-
 # ==========================================
 # TEXT HANDLER
 # ==========================================
@@ -254,115 +255,51 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text
-
-    # ======================================
-    # ADD STUDENT
-    # ======================================
+    step = context.user_data.get("step")
 
     if text == "➕ Добавить студента":
         context.user_data["step"] = "student_name"
-
-        await update.message.reply_text(
-            "👤 Введи имя студента:"
-        )
+        await update.message.reply_text("👤 Введи имя:")
         return
-
-    # ======================================
-    # STUDENTS
-    # ======================================
 
     if text == "📚 Студенты":
-        if not students:
-            await update.message.reply_text(
-                "Список пуст"
-            )
-            return
-
         for name in students:
             await send_student_card(update, name)
-
         return
-
-    # ======================================
-    # SCHEDULE
-    # ======================================
 
     if text == "📅 Расписание":
         msg = "📅 Расписание:\n\n"
-
-        found = False
-
         for name, s in students.items():
             for lesson in s.get("уроки_список", []):
-                found = True
-
-                msg += (
-                    f"👤 {name}\n"
-                    f"📅 {lesson['дата']} {lesson['время']}\n"
-                    f"📘 {lesson['тема']}\n\n"
-                )
-
-        if not found:
-            msg += "Нет занятий"
-
+                msg += f"👤 {name}\n📅 {lesson['дата']} {lesson['время']}\n📘 {lesson['тема']}\n\n"
         await update.message.reply_text(msg)
         return
 
-    # ======================================
-    # STATS
-    # ======================================
-
     if text == "📊 Статистика":
-        total_money = sum(
-            s.get("оплата", 0)
-            for s in students.values()
-        )
-
-        total_lessons = sum(
-            s.get("уроки", 0)
-            for s in students.values()
-        )
+        total_money = sum(s.get("оплата", 0) for s in students.values())
+        total_lessons = sum(s.get("уроки", 0) for s in students.values())
 
         await update.message.reply_text(
-            f"📊 Общая статистика\n\n"
-            f"👥 Студентов: {len(students)}\n"
-            f"💰 Заработано: {total_money} ₽\n"
-            f"📖 Всего уроков: {total_lessons}"
+            f"📊 Статистика\n\n👥 {len(students)}\n💰 {total_money} ₽\n📖 {total_lessons}"
         )
-
         return
-
-    # ======================================
-    # CREATE STUDENT FLOW
-    # ======================================
-
-    step = context.user_data.get("step")
 
     if step == "student_name":
         context.user_data["name"] = text
         context.user_data["step"] = "student_class"
-
-        await update.message.reply_text(
-            "📚 Введи класс:"
-        )
+        await update.message.reply_text("📚 Класс:")
         return
 
     if step == "student_class":
         context.user_data["class"] = text
         context.user_data["step"] = "student_goal"
-
-        await update.message.reply_text(
-            "🎯 Введи цель подготовки:"
-        )
+        await update.message.reply_text("🎯 Цель:")
         return
 
     if step == "student_goal":
         context.user_data["goal"] = text
         context.user_data["step"] = "student_note"
-
-        await update.message.reply_text(
-            "📝 Введи заметку:"
-        )
+        await update.message.reply_text("📝 Заметка:")
         return
 
     if step == "student_note":
@@ -378,64 +315,33 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         save_students()
-
         context.user_data.clear()
 
-        await update.message.reply_text(
-            f"✅ Студент {name} добавлен"
-        )
-
+        await update.message.reply_text(f"✅ Студент {name} добавлен")
         return
-
-    # ======================================
-    # PAYMENT INPUT
-    # ======================================
 
     if step == "payment_input":
         name = context.user_data["student_payment"]
 
-        try:
-            amount = int(text)
-        except:
-            await update.message.reply_text(
-                "Введите число"
-            )
-            return
-
-        students[name]["оплата"] += amount
+        students[name]["оплата"] += int(text)
         students[name]["уроки"] += 1
 
         save_students()
-
         context.user_data.clear()
 
-        await update.message.reply_text(
-            f"✅ Добавлено {amount} ₽\n"
-            f"📖 Уроков: {students[name]['уроки']}"
-        )
-
+        await update.message.reply_text("💰 Добавлено")
         return
-
-    # ======================================
-    # LESSON FLOW
-    # ======================================
 
     if step == "lesson_date":
         context.user_data["lesson_date"] = text
         context.user_data["step"] = "lesson_time"
-
-        await update.message.reply_text(
-            "⏰ Введи время (18:00):"
-        )
+        await update.message.reply_text("⏰ Время:")
         return
 
     if step == "lesson_time":
         context.user_data["lesson_time"] = text
         context.user_data["step"] = "lesson_topic"
-
-        await update.message.reply_text(
-            "📘 Введи тему урока:"
-        )
+        await update.message.reply_text("📘 Тема:")
         return
 
     if step == "lesson_topic":
@@ -448,17 +354,23 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         students[name]["уроки_список"].append(lesson)
+        students[name]["уроки"] += 1
 
         save_students()
 
+        try:
+            create_calendar_event(
+                name,
+                lesson["дата"],
+                lesson["время"],
+                text
+            )
+        except Exception as e:
+            print("Calendar error:", e)
+
         context.user_data.clear()
 
-        await update.message.reply_text(
-            "✅ Урок добавлен"
-        )
-
-        return
-
+        await update.message.reply_text("✅ Урок + Google Calendar")
 
 # ==========================================
 # CALLBACKS
@@ -470,108 +382,46 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
 
-    # ======================================
-    # ACCEPT
-    # ======================================
-
     if data.startswith("accept_"):
         user_id = int(data.replace("accept_", ""))
-
         if user_id not in approved_users:
             approved_users.append(user_id)
-
         save_users()
-
-        await context.bot.send_message(
-            user_id,
-            "✅ Доступ одобрен"
-        )
-
-        await query.edit_message_text(
-            "✅ Пользователь одобрен"
-        )
-
+        await context.bot.send_message(user_id, "✅ Доступ одобрен")
+        await query.edit_message_text("OK")
         return
-
-    # ======================================
-    # REJECT
-    # ======================================
 
     if data.startswith("reject_"):
         user_id = int(data.replace("reject_", ""))
-
-        await context.bot.send_message(
-            user_id,
-            "❌ Заявка отклонена"
-        )
-
-        await query.edit_message_text(
-            "❌ Пользователь отклонён"
-        )
-
+        await context.bot.send_message(user_id, "❌ Отклонено")
+        await query.edit_message_text("OK")
         return
-
-    # ======================================
-    # PAYMENT
-    # ======================================
 
     if data.startswith("payment_"):
         name = data.replace("payment_", "")
-
         context.user_data["step"] = "payment_input"
         context.user_data["student_payment"] = name
-
-        await query.message.reply_text(
-            f"💰 Введи сумму оплаты для {name}:"
-        )
-
+        await query.message.reply_text("💰 Сумма:")
         return
-
-    # ======================================
-    # LESSON
-    # ======================================
 
     if data.startswith("lesson_"):
         name = data.replace("lesson_", "")
-
         context.user_data["lesson_student"] = name
         context.user_data["step"] = "lesson_date"
-
-        await query.message.reply_text(
-            "📅 Введи дату урока (13.05.2026):"
-        )
-
+        await query.message.reply_text("📅 Дата:")
         return
-
-    # ======================================
-    # DELETE
-    # ======================================
 
     if data.startswith("delete_"):
         name = data.replace("delete_", "")
-
-        if name in students:
-            del students[name]
-
+        students.pop(name, None)
         save_students()
-
-        await query.edit_message_text(
-            f"🗑 Студент {name} удалён"
-        )
-
+        await query.edit_message_text("🗑 удалён")
         return
-
-    # ======================================
-    # CHART
-    # ======================================
 
     if data.startswith("chart_"):
         name = data.replace("chart_", "")
-
         await send_chart(update, name)
-
         return
-
 
 # ==========================================
 # MAIN
@@ -580,21 +430,15 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
 
+    # 🔥 FIX: webhook conflict
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(safe_startup(app))
+
     app.add_handler(CommandHandler("start", start))
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(callback)
-    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    app.add_handler(CallbackQueryHandler(callback))
 
     print("CRM BOT RUNNING...")
-
     app.run_polling()
 
 
