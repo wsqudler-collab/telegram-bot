@@ -677,6 +677,9 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
 
+    # 🔥 УБИРАЕТ WEBHOOK КОНФЛИКТ (409)
+    app.bot.delete_webhook(drop_pending_updates=True)
+
     app.add_handler(CommandHandler("start", start))
 
     app.add_handler(
