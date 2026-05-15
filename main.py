@@ -1,4 +1,5 @@
 import os
+print("ENV CALENDAR_ID =", os.getenv("CALENDAR_ID"))
 import json
 import logging
 
