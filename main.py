@@ -1,6 +1,10 @@
 import os
 import json
 import logging
+
+print("CALENDAR_ID RAW:", repr(os.getenv("CALENDAR_ID")))
+print("GOOGLE_CREDS LOADED:", bool(os.getenv("GOOGLE_CREDENTIALS")))
+
 from io import BytesIO
 from datetime import datetime, timedelta
 
