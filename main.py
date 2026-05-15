@@ -269,33 +269,39 @@ async def send_chart(update, name):
     if not student:
         return
 
-    lessons = student.get("уроки", 0)
+    lessons = student.get("уроки_список", [])
 
-    if lessons == 0:
+    if not lessons:
         await update.callback_query.message.reply_text(
             "Нет уроков для графика"
         )
         return
 
-    x = list(range(1, lessons + 1))
+    x = []
     y = []
 
-    total = 0
+    total_money = 0
 
-    for i in range(lessons):
-        total += 1
-        y.append(total)
+    for i, lesson in enumerate(lessons, start=1):
+        # можно считать каждый урок как условные 1 единицу ценности
+        # или привязать к оплате, если хочешь ещё умнее
+
+        lesson_value = student.get("урок_цена", 1000)  # дефолт 1000 ₽
+
+        total_money += lesson_value
+
+        x.append(i)
+        y.append(total_money)
 
     plt.figure(figsize=(6, 4))
     plt.plot(x, y, marker="o")
-    plt.title(f"Прогресс: {name}")
-    plt.xlabel("Урок")
-    plt.ylabel("Количество уроков")
+
+    plt.title(f"📈 Рост дохода: {name}")
+    plt.xlabel("Урок №")
+    plt.ylabel("Накопленный доход (₽)")
 
     buf = BytesIO()
-
     plt.savefig(buf, format="png")
-
     buf.seek(0)
 
     await update.callback_query.message.reply_photo(photo=buf)
