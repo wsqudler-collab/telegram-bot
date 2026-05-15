@@ -46,7 +46,11 @@ logging.basicConfig(level=logging.INFO)
 # GOOGLE CALENDAR
 # ==========================================
 
-GOOGLE_CREDS = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
+GOOGLE_CREDS_RAW = os.getenv("GOOGLE_CREDENTIALS")
+
+print("GOOGLE_CREDS LOADED:", bool(GOOGLE_CREDS_RAW))
+
+GOOGLE_CREDS = json.loads(GOOGLE_CREDS_RAW)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
@@ -62,6 +66,8 @@ calendar_service = build(
 )
 
 CALENDAR_ID = os.getenv("CALENDAR_ID")
+
+print("CALENDAR_ID RAW:", CALENDAR_ID)
 
 # ==========================================
 # DATA
